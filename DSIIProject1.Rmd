@@ -1,0 +1,423 @@
+---
+title: "ProjectDS2"
+author: "Chintan Nayak"
+date: "4/19/2022"
+output: html_document
+---
+
+```{r}
+library(dplyr)
+library(tidyverse)
+library(tidymodels)
+library(ggpubr)
+library(caret)
+```
+
+```{r}
+data = read.csv("/Users/HP/Downloads/house-prices-advanced-regression-techniques/train.csv")
+test_data = read.csv("/Users/HP/Downloads/house-prices-advanced-regression-techniques/test.csv")
+```
+
+```{r}
+data
+```
+```{r}
+summary(data)
+```
+## Train Dataset Cleaning
+
+#Now select only numerical data from train dataset
+
+```{r}
+numeric_train_data= select_if(data, is.numeric)
+```
+
+# Check for number of Null values
+
+```{r}
+colSums(is.na(numeric_train_data))
+```
+# Finding median for the null Values
+
+```{r}
+medianL= median(numeric_train_data$LotFrontage, na.rm= TRUE)
+medianM= median(numeric_train_data$MasVnrArea , na.rm= TRUE)
+medianG= median(numeric_train_data$GarageYrBlt , na.rm= TRUE)
+```
+
+# Replacing the Null values by median to the original train dataset
+
+```{r}
+data[is.na(data$LotFrontage), "LotFrontage"] = medianL
+data[is.na(data$MasVnrArea), "MasVnrArea"] = medianM
+data[is.na(data$GarageYrBlt), "GarageYrBlt"] = medianG
+
+```
+
+# Now selecting the numeric columns which have nearly Zero variance
+
+```{r}
+names(numeric_train_data)[nearZeroVar(numeric_train_data)]
+```
+# Saving these results in dropcols1
+
+```{r}
+dropcols1 = c("BsmtFinSF2", "LowQualFinSF", "KitchenAbvGr", "EnclosedPorch", "X3SsnPorch", "ScreenPorch", "PoolArea", "MiscVal")
+```
+
+# Now selecting only character columns from original train dataset
+
+```{r}
+char_train_data=  data %>% 
+     select_if(is.character)
+```
+
+# Converting these columns as factors
+
+```{r}
+df <- char_train_data%>%mutate_if(is.character, as.factor)
+```
+
+```{r}
+summary(df)
+```
+#Plotting these columns 
+
+```{r}
+for ( i in seq(1,length( df ),1) ) plot(df[,i],ylab=names(df[i]),type="l")
+```
+# We get dropcols2 list from summary and plots of these factor columns
+
+```{r}
+dropcols2= c("Street", "Alley", "LandContour", "Utilities", "LandSlope", "Condition2", "RoofMatl", "CentralAir", "GarageQual", "GarageCond", "SaleType", "PavedDrive", "LandContour", "ExterCond", "Exterior2nd", "GarageCond", "Heating", "MiscFeature", "BsmtFinType2", "Functional", "GarageQual", "GarageCond", "SaleCondition")
+
+```
+
+# Checking for Null values in character columns
+
+```{r}
+df2= char_train_data%>%
+  select((- dropcols2))
+
+colSums(is.na(df2))
+
+```
+# So we get dropcols3 list
+
+```{r}
+dropcols3= c("BsmtQual", "MasVnrType", "BsmtCond", "BsmtExposure", "BsmtFinType1", "FireplaceQu", "GarageType", "GarageFinish", "PoolQC", "Fence")
+```
+
+```{r}
+data[is.na(data$Electrical), "Electrical"] = "SBrkr"
+```
+
+
+# Checking for nearly Zero variance in character columns 
+
+```{r}
+names(char_train_data)[nearZeroVar(char_train_data)]
+```
+# Since all the columns are already in dropcols2 and dropcols3 we need not add these columns as new list
+
+#Now deleting the columns from 3 lists we created, id and convering all the character columns into factors in the final train dataset
+
+```{r}
+
+final_train= data %>%
+  select(-dropcols1)%>%
+  select(-dropcols2)%>%
+  select(-dropcols3)%>%
+  select(-Id)%>%
+  mutate_if(is.character, as.factor)
+
+```
+
+```{r}
+final_train
+```
+
+# Data Split
+
+```{r}
+set.seed(999)
+split= initial_split(final_train, prop = .75)
+training_data = training(split)
+testing_data = testing(split)
+```
+
+# Performing liner regression
+
+```{r}
+main_recipe =recipe(SalePrice~., data = training_data)%>%
+  step_range(all_numeric(), -all_outcomes())%>%
+  step_dummy(all_nominal(), -all_outcomes())
+  
+reg_model= linear_reg()%>%
+  set_engine('lm')%>%
+  set_mode("regression")
+
+reg_flow= workflow()%>%
+  add_model(reg_model)%>%
+  add_recipe(main_recipe)
+
+reg_fit= reg_flow%>%
+  fit(training_data)
+tidy(reg_fit)
+```
+# Evaluating the model on testing data(data split)
+
+```{r}
+reg_results=predict(reg_fit, testing_data)%>%
+  bind_cols(testing_data%>%select(SalePrice))
+```
+
+
+```{r}
+multi_metric<-metric_set(rsq, rmse,mae, mape)
+
+multi_metric(reg_results, truth= SalePrice , estimate= .pred)%>%
+  mutate(across(where(is.numeric), ~round(.x,2)))
+```
+
+## Now applying same process of cleaning on original test data
+
+# Finding median again for original test dataset
+
+```{r}
+medianL1= median(test_data$LotFrontage, na.rm= TRUE)
+medianM1= median(test_data$MasVnrArea , na.rm= TRUE)
+medianG1= median(test_data$GarageYrBlt , na.rm= TRUE)
+```
+
+
+# Replacing the Null values by median values in the original test dataset
+
+```{r}
+test_data[is.na(test_data$LotFrontage), "LotFrontage"] = medianL1
+test_data[is.na(test_data$MasVnrArea), "MasVnrArea"] = medianM1
+test_data[is.na(test_data$GarageYrBlt), "GarageYrBlt"] = medianG1
+
+```
+
+# Deleting the same columns as we did in the original train dataset
+
+```{r}
+final_test =test_data %>%
+  select(-dropcols1)%>%
+  select(-dropcols2)%>%
+  select(-dropcols3)%>%
+  select(-Id)%>%
+  mutate_if(is.character, as.factor)
+```
+
+```{r}
+summary(final_test)
+```
+
+#Checking for Null values
+
+```{r}
+colSums(is.na(final_test))
+```
+
+# Filling some data with median values and categorical values with very few missing values (<5) in the final test dataset
+
+```{r}
+final_test[is.na(final_test$MSZoning), "MSZoning"] = "RL"
+final_test[is.na(final_test$Exterior1st), "Exterior1st"] = "VinylSd"
+final_test[is.na(final_test$BsmtFinSF1), "BsmtFinSF1"] = 350
+final_test[is.na(final_test$BsmtUnfSF), "BsmtUnfSF"] = 554
+final_test[is.na(final_test$TotalBsmtSF), "TotalBsmtSF"] = 988
+final_test[is.na(final_test$BsmtFullBath), "BsmtFullBath"] = 1
+final_test[is.na(final_test$BsmtHalfBath), "BsmtHalfBath"] = 1
+final_test[is.na(final_test$KitchenQual), "KitchenQual"] = "TA"
+final_test[is.na(final_test$GarageCars), "GarageCars"] = 1
+final_test[is.na(final_test$GarageArea), "GarageArea"] = 480
+```
+
+
+# Predicting the SalePrice values of the final test dataset and combining with id from original test dataset
+
+```{r}
+reg_final_results=(test_data%>%select(Id))%>%
+  bind_cols(predict(reg_fit, final_test))%>%
+  mutate(across(where(is.numeric), ~round(.x,2)))
+```
+
+```{r}
+reg_final_results
+```
+#Double-check if any column is null
+
+```{r}
+colSums(is.na(reg_final_results))
+```
+#print the linear regression predictions
+
+```{r}
+#write.csv(reg_final_results,"/Users/HP/Downloads/house-prices-advanced-regression-techniques/house_pred_results1.csv", row.names = FALSE)
+```
+
+# Applying logarithmic transformation
+
+```{r}
+
+final_train%>%select(SalePrice)%>%mutate(l_SalePrice =log(SalePrice))%>%
+                    gather(key='key', value = 'val')%>%
+                    ggplot()+geom_density(aes(x=val, color=key))+facet_wrap(key~.,  scales = 'free')
+
+```
+# Updating the recipe
+
+```{r}
+l_recipe= main_recipe%>%step_log(SalePrice, offset=1, skip=TRUE)
+
+l_flow= reg_flow%>%update_recipe(l_recipe)
+
+l_fit= l_flow%>%fit(training_data)
+
+```
+
+
+```{r}
+results_l=predict(l_fit,testing_data)%>%bind_cols(testing_data%>%select(SalePrice))
+
+multi_metric(results_l, truth=SalePrice , estimate=exp(.pred))%>%
+  mutate(across(where(is.numeric), ~round(.x,2)))
+
+```
+```{r}
+log_results=(test_data%>%select(Id))%>%
+  bind_cols(predict(l_fit, final_test))%>%
+  mutate(across(where(is.numeric), ~round(.x,2)))
+```
+
+```{r}
+log_final_results= log_results%>%
+mutate(.pred= exp(.pred))
+```
+
+```{r}
+log_final_results
+```
+
+```{r}
+#write.csv(log_final_results,"/Users/HP/Downloads/house-prices-advanced-regression-techniques/house_pred_results_log.csv", row.names = FALSE)
+```
+
+
+# knn model 
+
+```{r}
+knn_model<-nearest_neighbor(neighbors=5) %>% 
+           set_engine('kknn') %>%
+           set_mode('regression')
+
+knn_flow= workflow()%>%
+  add_model(knn_model)%>%
+  add_recipe(main_recipe)
+
+knn_fit= knn_flow%>%
+  fit(training_data)
+tidy(reg_fit)
+
+```
+```{r}
+results_k=predict(knn_fit,testing_data)%>%bind_cols(testing_data%>%select(SalePrice))
+
+multi_metric(results_k, truth=SalePrice , estimate=(.pred))%>%
+  mutate(across(where(is.numeric), ~round(.x,2)))
+```
+
+```{r}
+knn_final_results=(test_data%>%select(Id))%>%
+  bind_cols(predict(knn_fit, final_test))%>%
+  mutate(across(where(is.numeric), ~round(.x,2)))
+```
+
+```{r}
+knn_final_results
+```
+```{r}
+#write.csv(knn_final_results,"/Users/HP/Downloads/house-prices-advanced-regression-techniques/house_pred_results_knn.csv", row.names = FALSE)
+```
+
+# decision tree model
+
+```{r}
+decision_tree_model<-decision_tree(tree_depth=5) %>% 
+           set_engine('rpart') %>%
+           set_mode('regression')
+
+tree_flow= workflow()%>%
+  add_model(decision_tree_model)%>%
+  add_recipe(main_recipe)
+
+tree_fit= tree_flow%>%
+  fit(training_data)
+tidy(reg_fit)
+
+```
+
+```{r}
+results_tree=predict(tree_fit,testing_data)%>%bind_cols(testing_data%>%select(SalePrice))
+
+multi_metric(results_tree, truth=SalePrice , estimate=(.pred))%>%
+  mutate(across(where(is.numeric), ~round(.x,2)))
+```
+
+```{r}
+tree_final_results=(test_data%>%select(Id))%>%
+  bind_cols(predict(tree_fit, final_test))%>%
+  mutate(across(where(is.numeric), ~round(.x,2)))
+```
+
+```{r}
+tree_final_results
+```
+
+```{r}
+#write.csv(tree_final_results,"/Users/HP/Downloads/house-prices-advanced-regression-techniques/house_pred_results_tree.csv", row.names = FALSE)
+```
+
+# Combining all predictions by all models and calulating the average
+
+```{r}
+all_results_combine= (test_data%>%select(Id))%>%
+  bind_cols(reg_final_results%>%select(.pred))%>%
+  bind_cols(log_final_results%>%select(.pred))%>%
+  bind_cols(knn_final_results%>%select(.pred))%>%
+  bind_cols(tree_final_results%>%select(.pred))
+```
+```{r}
+average_of_all= all_results_combine%>%
+  mutate(SalePrice= (.pred...2 + .pred...3 + .pred...4 + .pred...5)/4)
+```
+
+
+
+```{r}
+final_average_results= (test_data%>%select(Id))%>%
+  bind_cols(average_of_all%>%select(SalePrice))
+
+```
+
+
+```{r}
+final_average_results
+```
+
+```{r}
+#write.csv(final_average_results,"/Users/HP/Downloads/house-prices-advanced-regression-techniques/house_pred_results_avg.csv", row.names = FALSE)
+```
+
+
+
+## Conclusion: The best results are when logarithmic transformation is applied to the linear regression.
+
+
+
+
+
+
